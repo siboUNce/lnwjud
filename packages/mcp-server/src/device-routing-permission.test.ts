@@ -24,14 +24,14 @@ describe('remote device permission gate', () => {
         async listMcpServers() {
           return ok({ servers: [{ name: 'device:clinic-server', source: 'settings', enabled: true, connected: false, excluded: false, command: 'ssh' }] });
         },
-        async describeMcpServer(input) { return ok({ server: input.server, enabled: true, connected: true, tools: [] }); },
+        async describeMcpServer(input): ReturnType<NonNullable<McpApplicationServices['extensions']>['describeMcpServer']> { return ok({ server: input.server, enabled: true, connected: true, tools: [] }); },
         callMcpTool,
-        async close() {},
+        async close(): Promise<void> {},
       },
     };
 
     const response = await new ToolRegistry(services, { clientId: 'client-1', clientName: 'test' }, {
-      profileProvider: () => permissionProfiles.safe,
+      profileProvider: (): typeof permissionProfiles.safe => permissionProfiles.safe,
     }).invoke('read_file', {
       deviceId: 'clinic-server',
       workspaceId: 'workspace-1',

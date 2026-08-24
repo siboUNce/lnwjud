@@ -3,9 +3,9 @@ import { McpSessionManager, type McpClientFactory, type McpClientSession } from 
 
 function session(label: string): McpClientSession {
   return {
-    async listTools() { return []; },
-    async callTool() { return { structuredContent: { label } }; },
-    async close() {},
+    async listTools(): Promise<readonly []> { return []; },
+    async callTool(): Promise<{ structuredContent: { label: string } }> { return { structuredContent: { label } }; },
+    async close(): Promise<void> {},
   };
 }
 

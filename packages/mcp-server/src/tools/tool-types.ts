@@ -136,6 +136,7 @@ function validateRoutingDeviceId(input: unknown): Result<undefined> {
 function withoutRoutingDeviceId(input: unknown): unknown {
   if (!isRecord(input) || !('deviceId' in input)) return input;
   const { deviceId: _deviceId, ...rest } = input;
+  void _deviceId;
   return rest;
 }
 

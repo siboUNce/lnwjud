@@ -239,7 +239,7 @@ export class ToolRegistry {
     if (requestedDeviceId === undefined || this.deviceRouter.isLocal(requestedDeviceId)) return tool;
     return {
       ...tool,
-      execute: async (input, signal) => {
+      execute: async (input, signal): ReturnType<McpToolDefinition['execute']> => {
         if (!isRecord(input)) return { ok: false, error: appError('INVALID_INPUT', 'Remote tool input must be an object') };
         return this.deviceRouter.call(requestedDeviceId, tool.name, input, signal);
       },
