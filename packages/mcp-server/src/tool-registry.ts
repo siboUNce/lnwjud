@@ -84,7 +84,10 @@ export class ToolRegistry {
     this.workspaceScopeResolver = normalizeWorkspaceScopeResolver(services, actor, options);
     this.activityWorkspaceResolver = normalizeActivityWorkspaceResolver(services, actor);
     this.maxToolDurationMs = normalizeToolResponseBudget(options.maxToolDurationMs);
-    this.deviceRouter = new DeviceRouter({ extensions: services.extensions, sessionKey: options.sessionId });
+    this.deviceRouter = new DeviceRouter({
+      ...(services.extensions === undefined ? {} : { extensions: services.extensions }),
+      ...(options.sessionId === undefined ? {} : { sessionKey: options.sessionId }),
+    });
     const contextEconomy = new ContextEconomyRuntime();
     const context: McpToolContext = { services, actor, contextEconomy };
     const contextEngine = new ContextEngine(services, actor, contextEconomy);
