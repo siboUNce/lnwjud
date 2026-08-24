@@ -1,6 +1,6 @@
 # lnwjud Release Checklist
 
-**Current release candidate:** `v4.9.1` - Windows installer `lnwjud-Setup-4.9.1.exe`; MCP registry **214 configurable tools / 208 advertised by default**.
+**Current version:** `v4.9.1` - Windows installer `lnwjud-Setup-4.9.1.exe`; MCP registry **214 configurable tools / 208 advertised by default**.
 
 Run the release verification from PowerShell at the repository root. The automated gate must fail fast on any non-zero stage and `git diff --check` must pass before packaging or publishing.
 

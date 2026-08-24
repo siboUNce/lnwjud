@@ -91,9 +91,10 @@ async function syncAllVersions() {
   try {
     let readmeContent = await readFile(readmePath, 'utf8');
     readmeContent = readmeContent
-      .replace(/## Current (?:source \/ release candidate|release): v[0-9.]+/g, `## Current source / release candidate: v${version}`)
+      .replace(/## Current (?:version|source \/ release candidate|release): v[0-9.]+/g, `## Current version: v${version}`)
       .replace(/The v[0-9.]+ release target and runtime contract/g, 'The v' + version + ' release target and runtime contract')
-      .replace(/current source\/release candidate is `v[0-9.]+`/g, 'current source/release candidate is `v' + version + '`')
+      .replace(/current source\/release candidate is `v[0-9.]+`/g, 'current version is `v' + version + '`')
+      .replace(/The Windows installer for the current version is `lnwjud-Setup-[0-9.]+\.exe`/g, 'The Windows installer for the current version is `lnwjud-Setup-' + version + '.exe`')
       .replace(/validated local test installer `lnwjud-Setup-[0-9.]+\.exe`/g, 'validated local test installer `lnwjud-Setup-' + version + '.exe`')
       .replace(/apps\/desktop\/dist\/installers\/lnwjud-Setup-[0-9.]+\.exe/g, 'apps/desktop/dist/installers/lnwjud-Setup-' + version + '.exe')
       .replace(/current v[0-9.]+ `ToolRegistry`/g, 'current v' + version + ' `ToolRegistry`')
@@ -105,11 +106,11 @@ async function syncAllVersions() {
     // skip if missing
   }
 
-  // 8. Update current release-candidate Markdown references without rewriting release history.
+  // 8. Update current-version Markdown references without rewriting release history.
   const markdownTargets = [
     ['.github/RELEASE_CHECKLIST.md', (content) => content
-      .replace(/\*\*Current release candidate:\*\* `v[0-9.]+`/g, `**Current release candidate:** ` + '`v' + version + '`')
-      .replace(/(\*\*Current release candidate:\*\*[^\r\n]*Windows installer `lnwjud-Setup-)[0-9.]+(\.exe`)/g, (_match, prefix, suffix) => prefix + version + suffix)],
+      .replace(/\*\*Current (?:version|release candidate):\*\* `v[0-9.]+`/g, `**Current version:** ` + '`v' + version + '`')
+      .replace(/(\*\*Current (?:version|release candidate):\*\*[^\r\n]*Windows installer `lnwjud-Setup-)[0-9.]+(\.exe`)/g, (_match, prefix, suffix) => prefix + version + suffix)],
     ['docs/USAGE_TH.md', (content) => content.replace(/lnwjud-Setup-[0-9.]+\.exe/g, `lnwjud-Setup-${version}.exe`)],
     ['docs/development/PACKAGING_WINDOWS.md', (content) => content.replace(/lnwjud-Setup-[0-9.]+\.exe/g, `lnwjud-Setup-${version}.exe`)],
     ['docs/LNWJUD_CAPABILITIES.md', (content) => content.replace(/lnwjud v[0-9.]+/g, `lnwjud v${version}`)],

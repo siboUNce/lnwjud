@@ -40,7 +40,7 @@ The tunnel is outbound-only: `tunnel-client` runs beside lnwjud, reaches OpenAI
 over outbound HTTPS, forwards MCP work to the local stdio server, and returns the
 response without opening a public inbound port on the Windows machine.
 
-## Current source / release candidate: v4.9.1
+## Current version: v4.9.1
 
 The v4.9.1 release target and runtime contract contain **214 configurable MCP tools**,
 with **208 advertised by default** because
@@ -290,7 +290,7 @@ stops the current local HTTP listener.
 
 1. Download the latest published installer from
    [GitHub Releases](https://github.com/engasnm111/lnwjud/releases/latest).
-   The latest published release is `lnwjud-Setup-4.8.5.exe`; the current source/release candidate is `v4.9.1`, with the validated local test installer `lnwjud-Setup-4.9.1.exe` pending publication.
+   The Windows installer for the current version is `lnwjud-Setup-4.9.1.exe`; download the published artifact from GitHub Releases.
 2. Run the NSIS installer and launch **lnwjud Agent Control Center**.
 3. Add or select the project/workspace you want lnwjud to operate on.
 4. Review **Settings** before attaching an AI client, especially Permission
