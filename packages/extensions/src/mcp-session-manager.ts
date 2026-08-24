@@ -20,6 +20,7 @@ export interface McpSessionManagerOptions {
 }
 
 interface ManagedSession {
+  readonly server: string;
   readonly session: McpClientSession;
   readonly tools: readonly McpToolSummary[];
   lastUsedAt: number;
@@ -40,7 +41,7 @@ export class McpSessionManager {
   }
 
   public isConnected(server: string): boolean {
-    return this.sessions.has(server);
+    return [...this.sessions.values()].some((managed) => managed.server === server);
   }
 
   public async describe(server: string, config: McpServerLaunchConfig, signal?: AbortSignal): Promise<Result<{
@@ -49,7 +50,7 @@ export class McpSessionManager {
   }>> {
     try {
       if (isAborted(signal)) return cancelledCall();
-      const managed = await this.ensure(server, config, signal);
+      const managed = await this.ensure(server, server, config, signal);
       if (isAborted(signal)) return cancelledCall();
       return ok({ connected: true, tools: managed.tools });
     } catch (error: unknown) {
@@ -64,10 +65,12 @@ export class McpSessionManager {
     tool: string,
     args: Readonly<Record<string, unknown>>,
     signal?: AbortSignal,
+    parentSessionKey?: string,
   ): Promise<Result<unknown>> {
+    const cacheKey = childSessionCacheKey(server, parentSessionKey);
     try {
       if (isAborted(signal)) return cancelledCall();
-      const managed = await this.ensure(server, config, signal);
+      const managed = await this.ensure(cacheKey, server, config, signal);
       if (isAborted(signal)) return cancelledCall();
       const result = await this.enqueue(managed, () => withTimeout(
         (callSignal) => managed.session.callTool(tool, args, callSignal),
@@ -79,7 +82,7 @@ export class McpSessionManager {
       this.scheduleIdleSweep();
       return ok(result);
     } catch (error: unknown) {
-      await this.drop(server);
+      await this.drop(cacheKey);
       if (isAborted(signal)) return cancelledCall();
       return err(appError('INTERNAL_ERROR', sanitizeError(error), true));
     }
@@ -88,16 +91,16 @@ export class McpSessionManager {
   public async close(): Promise<void> {
     if (this.idleTimer !== undefined) clearInterval(this.idleTimer);
     this.idleTimer = undefined;
-    const closers = [...this.sessions.entries()].map(async ([name, managed]) => {
-      this.sessions.delete(name);
+    const closers = [...this.sessions.entries()].map(async ([cacheKey, managed]) => {
+      this.sessions.delete(cacheKey);
       await managed.session.close().catch(() => undefined);
     });
     await Promise.all(closers);
   }
 
-  private async ensure(server: string, config: McpServerLaunchConfig, signal?: AbortSignal): Promise<ManagedSession> {
+  private async ensure(cacheKey: string, server: string, config: McpServerLaunchConfig, signal?: AbortSignal): Promise<ManagedSession> {
     if (isAborted(signal)) throw new Error('Child MCP connection was cancelled');
-    const existing = this.sessions.get(server);
+    const existing = this.sessions.get(cacheKey);
     if (existing !== undefined) {
       existing.lastUsedAt = Date.now();
       return existing;
@@ -109,12 +112,13 @@ export class McpSessionManager {
       const tools = await session.listTools(signal);
       if (isAborted(signal)) throw new Error('Child MCP connection was cancelled');
       const managed: ManagedSession = {
+        server,
         session,
         tools,
         lastUsedAt: Date.now(),
         queue: Promise.resolve(),
       };
-      this.sessions.set(server, managed);
+      this.sessions.set(cacheKey, managed);
       this.scheduleIdleSweep();
       return managed;
     } catch (error: unknown) {
@@ -129,10 +133,10 @@ export class McpSessionManager {
     return next;
   }
 
-  private async drop(server: string): Promise<void> {
-    const managed = this.sessions.get(server);
+  private async drop(cacheKey: string): Promise<void> {
+    const managed = this.sessions.get(cacheKey);
     if (managed === undefined) return;
-    this.sessions.delete(server);
+    this.sessions.delete(cacheKey);
     await managed.session.close().catch(() => undefined);
   }
 
@@ -146,8 +150,8 @@ export class McpSessionManager {
 
   private async sweepIdle(): Promise<void> {
     const now = Date.now();
-    for (const [name, managed] of this.sessions) {
-      if (now - managed.lastUsedAt >= this.idleTimeoutMs) await this.drop(name);
+    for (const [cacheKey, managed] of this.sessions) {
+      if (now - managed.lastUsedAt >= this.idleTimeoutMs) await this.drop(cacheKey);
     }
   }
 }
@@ -187,6 +191,13 @@ export const defaultMcpClientFactory: McpClientFactory = {
     };
   },
 };
+
+function childSessionCacheKey(server: string, parentSessionKey: string | undefined): string {
+  const normalized = parentSessionKey?.trim();
+  return normalized === undefined || normalized.length === 0
+    ? server
+    : JSON.stringify([server, normalized]);
+}
 
 function withTimeout<T>(operation: (signal: AbortSignal) => Promise<T>, timeoutMs: number, message: string, parentSignal?: AbortSignal): Promise<T> {
   return new Promise<T>((resolve, reject) => {

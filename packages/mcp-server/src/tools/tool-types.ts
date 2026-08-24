@@ -18,7 +18,7 @@ import type {
   WorkspaceQueryService,
   WriteFileRequest,
 } from '@lnwjud/application';
-import type { z } from 'zod';
+import { z } from 'zod';
 import type { ContextEconomyRuntime } from '../context-economy.js';
 
 export interface WorkspaceInfoPort {
@@ -86,18 +86,28 @@ export interface ToolConfig<T extends z.ZodType> {
   readonly permission: McpPermissionLevel;
   readonly annotations: McpToolAnnotations;
   readonly inputSchema: T;
+  /** Set false when deviceId is part of the tool's own local-management contract. */
+  readonly routeByDevice?: boolean;
   handler(input: z.infer<T>, signal: AbortSignal): Promise<Result<unknown>>;
 }
 
+const routingDeviceIdSchema = z.string().trim().min(1).max(128);
+
 export function defineTool<T extends z.ZodType>(config: ToolConfig<T>): McpToolDefinition {
+  const routeByDevice = config.routeByDevice !== false;
+  const publicInputSchema = routeByDevice ? withRoutingDeviceId(config.inputSchema) : config.inputSchema;
   return {
     name: config.name,
     description: config.description,
     permission: config.permission,
     annotations: config.annotations,
-    inputSchema: config.inputSchema,
+    inputSchema: publicInputSchema,
     parse(input: unknown): Result<unknown> {
-      const parsed = config.inputSchema.safeParse(input);
+      if (routeByDevice) {
+        const routingValidation = validateRoutingDeviceId(input);
+        if (!routingValidation.ok) return routingValidation;
+      }
+      const parsed = config.inputSchema.safeParse(routeByDevice ? withoutRoutingDeviceId(input) : input);
       return parsed.success ? ok(parsed.data) : err({ code: 'INVALID_INPUT', message: 'Tool input is invalid', recoverable: false });
     },
     execute(input: unknown, signal: AbortSignal): Promise<Result<unknown>> {
@@ -108,6 +118,30 @@ export function defineTool<T extends z.ZodType>(config: ToolConfig<T>): McpToolD
 
 export function missingService<T>(): Result<T> {
   return err({ code: 'INTERNAL_ERROR', message: 'MCP application service is unavailable', recoverable: true });
+}
+
+function withRoutingDeviceId<T extends z.ZodType>(schema: T): z.ZodType {
+  if (schema instanceof z.ZodObject) return schema.safeExtend({ deviceId: routingDeviceIdSchema.optional() });
+  return schema;
+}
+
+function validateRoutingDeviceId(input: unknown): Result<undefined> {
+  if (!isRecord(input) || !('deviceId' in input) || input.deviceId === undefined) return ok(undefined);
+  const parsed = routingDeviceIdSchema.safeParse(input.deviceId);
+  return parsed.success
+    ? ok(undefined)
+    : err({ code: 'INVALID_INPUT', message: 'Tool input is invalid', recoverable: false });
+}
+
+function withoutRoutingDeviceId(input: unknown): unknown {
+  if (!isRecord(input) || !('deviceId' in input)) return input;
+  const { deviceId: _deviceId, ...rest } = input;
+  void _deviceId;
+  return rest;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export type { ApplyPatchRequest, DeleteFileRequest, MoveFileRequest, ReadFileRequest, ReadFilesRequest, WriteFileRequest };

@@ -37,6 +37,7 @@ export function mcpBridgeTools(context: McpToolContext): McpToolDefinition[] {
           server: input.server,
           tool: input.tool,
           ...(input.arguments === undefined ? {} : { arguments: input.arguments }),
+          ...(context.actor.sessionId === undefined ? {} : { sessionKey: context.actor.sessionId }),
         }, signal),
     }),
   ];

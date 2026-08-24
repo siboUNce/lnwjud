@@ -13,6 +13,8 @@ export type AppErrorCode =
   | 'EXECUTABLE_NOT_FOUND'
   | 'GIT_NOT_REPOSITORY'
   | 'CODEX_NOT_AVAILABLE'
+  | 'DEVICE_NOT_FOUND'
+  | 'DEVICE_OFFLINE'
   | 'INTERNAL_ERROR';
 
 export interface AppError {
