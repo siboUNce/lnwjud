@@ -80,3 +80,4 @@ docs/benchmarks/*
 .DS_Store
 Thumbs.db
 lnwjud-incident.json
+.codegraph

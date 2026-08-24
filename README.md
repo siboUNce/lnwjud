@@ -1576,6 +1576,14 @@ Git commit author metadata is public in a public repository. Contributors who do
 not want to publish a personal email address should configure a GitHub-provided
 `users.noreply.github.com` address before committing.
 
+## Community and contribution
+
+- [Contributing guide](CONTRIBUTING.md)
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Issue tracker](https://github.com/engasnm111/lnwjud/issues)
+
+Please use the security policy instead of public issues for vulnerability details.
 ## Development and verification
 
 ```powershell
