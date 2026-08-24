@@ -3,6 +3,7 @@ import type { ExtensionsService, McpServerListItem, McpToolSummary } from '@lnwj
 
 const DEVICE_SERVER_PREFIX = 'device:';
 const LOCAL_DEVICE_ID = 'local';
+const TRUSTED_DEVICE_SOURCES = new Set(['lnwjud-settings', 'settings']);
 
 export interface DeviceSummary {
   readonly deviceId: string;
@@ -128,13 +129,15 @@ export class DeviceRouter {
     const listed = await this.extensions.listMcpServers();
     if (!listed.ok) return listed;
     const expected = DEVICE_SERVER_PREFIX + deviceId;
-    const server = listed.value.servers.find((entry) => entry.name === expected);
+    const server = listed.value.servers.find((entry) => isDeviceServer(entry) && entry.name === expected);
     return server === undefined ? deviceNotFound(deviceId) : ok(server);
   }
 }
 
 function isDeviceServer(server: McpServerListItem): boolean {
-  return server.name.startsWith(DEVICE_SERVER_PREFIX) && server.name.length > DEVICE_SERVER_PREFIX.length;
+  return TRUSTED_DEVICE_SOURCES.has(server.source)
+    && server.name.startsWith(DEVICE_SERVER_PREFIX)
+    && server.name.length > DEVICE_SERVER_PREFIX.length;
 }
 
 function toDeviceSummary(server: McpServerListItem): DeviceSummary {
