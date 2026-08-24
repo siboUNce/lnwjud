@@ -16,7 +16,7 @@ sessionId   = which MCP session owns handles
 workspaceId = which registered workspace is targeted on that machine
 ```
 
-A remote device is configured as an existing child MCP server whose name is `device:<deviceId>`. Phase 1 deliberately reuses the existing MCP extension/session transport instead of adding a second transport stack.
+In phase 1, `deviceId` is a user-configured stable logical ID derived from a child MCP server name `device:<deviceId>`; it is not a generated hardware UUID. The implementation deliberately reuses the existing MCP extension/session transport instead of adding a second transport stack.
 
 ## Phase-1 routing contract
 
@@ -24,7 +24,9 @@ A remote device is configured as an existing child MCP server whose name is `dev
 - `deviceId: "local"` executes locally.
 - A non-local `deviceId` routes to child MCP server `device:<deviceId>`.
 - `deviceId` is validated centrally and stripped before the destination tool receives its arguments.
-- The gateway applies its existing permission/destructive checks before remote dispatch.
+- The original tool permission gate still applies.
+- A cross-device route additionally requires `EXECUTE` permission because establishing/using a child MCP can launch an intermediary process such as `ssh` or `tunnel-client`.
+- The gateway applies its existing destructive checks before remote dispatch.
 - Remote destructive calls do not use a coincidentally matching local workspace for automatic destructive approval; they fail closed to the normal confirmation path.
 - The destination lnwjud performs its normal permission, workspace/path and destructive enforcement again.
 - A remote `PATH_OUTSIDE_WORKSPACE` result is preserved rather than converted into a generic transport failure.
@@ -54,6 +56,8 @@ A child MCP connection is keyed by both remote server and the parent MCP `sessio
 
 Calls from the same parent session reuse their child connection. Different parent sessions do not share the child connection, preserving the upstream session-owned process/task model on the remote lnwjud instance.
 
+The same session key is also propagated when a caller explicitly uses the existing `mcp_call` bridge against a `device:*` server, so direct child calls do not bypass the session-isolation rule.
+
 ## Configuration
 
 Remote devices reuse `ExtensionsSettings.extraMcpServers`. Example:
@@ -75,7 +79,9 @@ Remote devices reuse `ExtensionsSettings.extraMcpServers`. Example:
 }
 ```
 
-The remote command is transport/bootstrap only. The destination runtime owns its filesystem/process capability boundary. A path outside the destination's configured roots must still fail with `PATH_OUTSIDE_WORKSPACE`.
+The device entry should use an intermediary transport such as `ssh` or a tunnel client. The existing `McpConfigLoader` deliberately refuses a child entry whose command directly points back to local `lnwjud`, preventing accidental local recursion. The remote command is transport/bootstrap only; the destination runtime owns its filesystem/process capability boundary. A path outside the destination's configured roots must still fail with `PATH_OUTSIDE_WORKSPACE`.
+
+For SSH transport, host-key and authentication setup must already be non-interactive; otherwise child MCP startup may wait for an SSH prompt and eventually time out.
 
 ## Security invariants
 
@@ -85,6 +91,8 @@ The remote command is transport/bootstrap only. The destination runtime owns its
 4. Remote destructive auto-approval never relies on local workspace scope.
 5. Destination permission/path/destructive enforcement remains authoritative and mandatory.
 6. Parent-session identity is propagated into the child-session cache key to avoid cross-session handle ownership on the destination.
+7. Cross-device routing requires `EXECUTE` permission in addition to the original tool's permission level.
+8. Direct local lnwjud self-aggregation remains blocked; a device entry must use an intermediary transport to reach another runtime.
 
 ## Upstream compatibility
 
@@ -104,4 +112,4 @@ If upstream later ships a native multi-device implementation, prefer the upstrea
 
 ## Verification status
 
-Behavioral contract tests were added for routing, remote error preservation, local compatibility, parent-session propagation and per-session child connection isolation. In the current execution environment the repository could not be cloned from GitHub and the fork's GitHub Actions run did not start, so no test/typecheck/release-gate result is claimed yet. The feature remains a draft PR until an authoritative runner verifies it.
+Behavioral contract tests were added for routing, permission escalation, remote error preservation, local compatibility, parent-session propagation, per-session child connection isolation and the device transport recursion guard. In the current execution environment the repository could not be cloned from GitHub and the fork's GitHub Actions run did not start, so no test/typecheck/release-gate result is claimed yet. The feature remains a draft PR until an authoritative runner verifies it.
