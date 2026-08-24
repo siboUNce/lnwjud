@@ -66,6 +66,8 @@ export interface ExtensionsService {
     readonly server: string;
     readonly tool: string;
     readonly arguments?: Readonly<Record<string, unknown>>;
+    /** Optional parent-session identity used to isolate child MCP ownership. */
+    readonly sessionKey?: string;
   }, signal?: AbortSignal): Promise<Result<unknown>>;
   close(): Promise<void>;
 }

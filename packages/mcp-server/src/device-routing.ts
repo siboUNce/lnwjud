@@ -21,15 +21,19 @@ export interface DeviceInfo {
 export interface DeviceRouterOptions {
   readonly extensions?: ExtensionsService;
   readonly localDeviceId?: string;
+  /** Parent MCP session identity. Remote child connections are isolated by this key. */
+  readonly sessionKey?: string;
 }
 
 export class DeviceRouter {
   private readonly extensions: ExtensionsService | undefined;
   private readonly localDeviceId: string;
+  private readonly sessionKey: string | undefined;
 
   public constructor(options: DeviceRouterOptions = {}) {
     this.extensions = options.extensions;
     this.localDeviceId = normalizeDeviceId(options.localDeviceId) ?? LOCAL_DEVICE_ID;
+    this.sessionKey = normalizeDeviceId(options.sessionKey);
   }
 
   public isLocal(deviceId: string | undefined): boolean {
@@ -103,6 +107,7 @@ export class DeviceRouter {
       server: remote.value.name,
       tool,
       arguments: { ...args },
+      ...(this.sessionKey === undefined ? {} : { sessionKey: this.sessionKey }),
     }, signal ?? new AbortController().signal);
     if (!called.ok) return mapTransportFailure(normalized, called);
     return decodeRemoteToolResult(called.value);
@@ -154,7 +159,7 @@ function deviceNotFound<T = never>(deviceId: string): Result<T> {
 }
 
 function mapTransportFailure<T>(deviceId: string, failure: { readonly ok: false; readonly error: { readonly code: AppErrorCode; readonly message: string; readonly recoverable: boolean } }): Result<T> {
-  if (failure.error.code !== 'INTERNAL_ERROR') return failure as Result<T>;
+  if (failure.error.code !== 'INTERNAL_ERROR') return err(failure.error);
   return err(appError('DEVICE_OFFLINE', `Device is unavailable: ${deviceId}`, true));
 }
 

@@ -94,6 +94,7 @@ export class LocalExtensionsService implements ExtensionsService {
     readonly server: string;
     readonly tool: string;
     readonly arguments?: Readonly<Record<string, unknown>>;
+    readonly sessionKey?: string;
   }, signal?: AbortSignal): Promise<Result<unknown>> {
     if (isAborted(signal)) return cancelledMcpCall();
     const server = await this.findServer(input.server);
@@ -111,6 +112,7 @@ export class LocalExtensionsService implements ExtensionsService {
       input.tool,
       input.arguments ?? {},
       signal,
+      input.sessionKey,
     );
   }
 

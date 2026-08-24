@@ -84,7 +84,7 @@ export class ToolRegistry {
     this.workspaceScopeResolver = normalizeWorkspaceScopeResolver(services, actor, options);
     this.activityWorkspaceResolver = normalizeActivityWorkspaceResolver(services, actor);
     this.maxToolDurationMs = normalizeToolResponseBudget(options.maxToolDurationMs);
-    this.deviceRouter = new DeviceRouter({ extensions: services.extensions });
+    this.deviceRouter = new DeviceRouter({ extensions: services.extensions, sessionKey: options.sessionId });
     const contextEconomy = new ContextEconomyRuntime();
     const context: McpToolContext = { services, actor, contextEconomy };
     const contextEngine = new ContextEngine(services, actor, contextEconomy);
@@ -138,6 +138,7 @@ export class ToolRegistry {
 
   public async invoke(name: string, input: unknown, traceContext?: TraceContext, parentSignal?: AbortSignal): Promise<McpToolResponse> {
     const requestedDeviceId = readRequestedDeviceId(input);
+    const remoteDevice = requestedDeviceId !== undefined && !this.deviceRouter.isLocal(requestedDeviceId);
     const activityWorkspaceId = await this.resolveActivityWorkspaceId(name, input);
     const activityInput = withActivityWorkspaceId(input, activityWorkspaceId);
     const callId = await this.activity.begin(name, activityInput, { ...(traceContext ?? {}), ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }) });
@@ -158,7 +159,7 @@ export class ToolRegistry {
       const destructiveDecision = inspectDestructiveOperation(tool.name, parsed.value);
       const policy = this.destructivePolicyProvider();
       const destructiveWorkspaceId = readExplicitWorkspaceId(parsed.value);
-      const workspaceScope = destructiveDecision.destructive && destructiveWorkspaceId !== undefined
+      const workspaceScope = destructiveDecision.destructive && destructiveWorkspaceId !== undefined && !remoteDevice
         ? await this.resolveWorkspaceScope(destructiveWorkspaceId)
         : null;
       const policyAllowsScopedDestructive = destructiveDecision.destructive
