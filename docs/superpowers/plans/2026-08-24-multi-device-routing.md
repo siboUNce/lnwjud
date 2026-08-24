@@ -4,20 +4,26 @@
 
 **Goal:** Add explicit `deviceId` routing so one lnwjud MCP surface can execute tools on configured remote lnwjud devices without weakening local or remote workspace/security boundaries.
 
-**Architecture:** Reuse the existing child-MCP extension/session transport. Remote devices are MCP servers named `device:<deviceId>`. Tool schemas expose an optional routing `deviceId`; ToolRegistry strips it before local validation/forwarding, applies the gateway's existing policy gates, and dispatches non-local calls through a small DeviceRouter. Destination lnwjud performs its normal validation and boundary enforcement again.
+**Architecture:** Reuse the existing child-MCP extension/session transport. Remote devices are MCP servers named `device:<deviceId>`. Tool schemas expose an optional routing `deviceId`; ToolRegistry strips it before local handler validation/forwarding, applies the gateway's existing policy gates, and dispatches non-local calls through `DeviceRouter`. Destination lnwjud validates and enforces its own boundary again. Child connections are isolated by parent MCP session when a stable session ID is available.
 
 **Tech Stack:** TypeScript, Zod 4, Vitest, MCP 2.0 client/server, existing `@lnwjud/extensions` child-MCP runtime.
 
 **Spec:** `docs/architecture/MULTI_DEVICE_ROUTING.md`
 
+## Execution status
+
+Implementation commits exist on `feature/multi-device-routing` and draft PR #1. Behavioral tests were written before/alongside the production slices, but the current execution environment could not clone the repository and the fork's GitHub Actions did not start. Therefore automated RED/GREEN/typecheck/release verification remains pending and the PR stays draft.
+
 ## Global Constraints
 
 - Preserve calls without `deviceId` exactly as local behavior.
-- Keep fork `main` fast-forwardable to upstream; feature code remains on `feature/multi-device-routing`.
+- Keep fork `main` fast-forwardable to upstream; feature code remains isolated on `feature/multi-device-routing` until verification.
 - Do not introduce a second remote transport stack; reuse `ExtensionsService` and child MCP sessions.
+- Do not add new public MCP tool names in phase 1; reuse `mcp_list`/`mcp_describe` for device discovery.
 - Never bypass destination workspace/path/permission/destructive checks.
-- Never forward `deviceId` to the destination child MCP call.
-- Use TDD: failing behavior test before each production change.
+- Never forward the top-level routing `deviceId` to the destination tool.
+- Never use local workspace scope to auto-approve a remote destructive operation.
+- Preserve parent-session ownership by isolating child MCP connections per parent session.
 
 ---
 
@@ -29,14 +35,13 @@
 - Modify: `packages/domain/src/errors.ts`
 
 **Interfaces:**
-- Produces: `DeviceRouter` with `list()`, `info(deviceId, signal?)`, `ping(deviceId, signal?)`, `isLocal(deviceId)`, and `call(deviceId, tool, args, signal)`.
+- Produces: `DeviceRouter.list()`, `info()`, `ping()`, `isLocal()`, and `call()`.
 - Remote device discovery consumes `McpApplicationServices.extensions` and the `device:<id>` naming convention.
 
-- [ ] **Step 1: Write failing tests** for local discovery, remote discovery, remote call decoding, unknown-device fail-closed behavior, and connectivity failure mapping.
-- [ ] **Step 2: Run the focused mcp-server tests and verify RED** because DeviceRouter/device error codes do not exist.
-- [ ] **Step 3: Implement the minimal DeviceRouter** using existing `ExtensionsService.listMcpServers`, `describeMcpServer`, and `callMcpTool`.
-- [ ] **Step 4: Run the focused tests and verify GREEN**.
-- [ ] **Step 5: Commit** `feat(mcp): add multi-device router`.
+- [x] Write contract tests for local/remote discovery, success decoding, remote boundary-error preservation, missing devices and local compatibility.
+- [x] Add `DEVICE_NOT_FOUND` and `DEVICE_OFFLINE` application error codes.
+- [x] Implement `DeviceRouter` using existing `ExtensionsService.listMcpServers`, `describeMcpServer`, and `callMcpTool`.
+- [ ] Run focused tests and verify RED/GREEN on an authoritative runner.
 
 ### Task 2: Make ordinary tool contracts device-routable
 
@@ -45,31 +50,27 @@
 - Test: `packages/mcp-server/src/device-routing.test.ts`
 
 **Interfaces:**
-- Produces: `ToolConfig.routeByDevice?: boolean` defaulting to true.
-- `defineTool()` exposes optional `deviceId` on routable object schemas but parses handlers against the original schema after stripping the routing field.
+- `defineTool()` advertises optional `deviceId` on routable Zod object schemas.
+- Parsing strips `deviceId` before validating the tool's original strict schema and before handler execution.
 
-- [ ] **Step 1: Add a failing test** showing `read_file` accepts `{ deviceId, workspaceId, path }` while its parsed handler value contains only `{ workspaceId, path }`.
-- [ ] **Step 2: Verify RED** with current strict Zod schemas rejecting `deviceId`.
-- [ ] **Step 3: Extend routable object schemas centrally in `defineTool()`** and strip `deviceId` before original-schema validation.
-- [ ] **Step 4: Verify GREEN** and run existing schema/tool-registry tests.
-- [ ] **Step 5: Commit** `feat(mcp): expose deviceId on tool schemas`.
+- [x] Add a contract test showing `read_file` accepts `{ deviceId, workspaceId, path }` but parses to the original handler shape.
+- [x] Extend object schemas centrally and validate/strip `deviceId` before original-schema parsing.
+- [ ] Run existing schema/tool-registry tests and typecheck.
 
-### Task 3: Add local device tools
+### Task 3: Reuse existing MCP discovery surface
 
 **Files:**
-- Create: `packages/mcp-server/src/tools/device-tools.ts`
-- Modify: `packages/mcp-server/src/tool-registry.ts`
-- Test: `packages/mcp-server/src/device-routing.test.ts`
+- No new public tool file is required.
+- Document behavior in `docs/architecture/MULTI_DEVICE_ROUTING.md`.
 
 **Interfaces:**
-- Produces local-only tools `device_list`, `device_info`, `device_ping`.
-- Device tools use `routeByDevice: false` because their `deviceId` selects the subject device rather than the execution target.
+- `mcp_list` discovers child servers named `device:*`.
+- `mcp_describe` describes/establishes a selected remote child MCP server.
+- `DeviceRouter.list/info/ping` remain internal helpers.
 
-- [ ] **Step 1: Add failing tests** asserting the three tool names, READ permissions, local-only parsing, and expected discovery responses.
-- [ ] **Step 2: Verify RED**.
-- [ ] **Step 3: Implement `deviceTools(router)` and register them near workspace discovery tools**.
-- [ ] **Step 4: Update deterministic tool-order test and verify GREEN**.
-- [ ] **Step 5: Commit** `feat(mcp): add device discovery tools`.
+- [x] Preserve the upstream deterministic tool-name catalog by adding no phase-1 `device_*` public tools.
+- [x] Document the `device:<deviceId>` naming convention and discovery flow.
+- [ ] Verify the unchanged deterministic tool-order test on an authoritative runner.
 
 ### Task 4: Dispatch ordinary calls by deviceId
 
@@ -78,34 +79,63 @@
 - Test: `packages/mcp-server/src/device-routing.test.ts`
 
 **Interfaces:**
-- Consumes: `DeviceRouter.call(deviceId, toolName, parsedArgs, signal)`.
-- Preserves the existing permission/destructive checks before remote execution.
+- `DeviceRouter.call(deviceId, toolName, parsedArgs, signal)` performs remote dispatch.
+- Existing gateway permission/destructive checks run before dispatch.
+- Destination lnwjud performs its own checks again.
 
-- [ ] **Step 1: Add a failing test** where `read_file` with `deviceId: clinic-server` calls `extensions.callMcpTool({ server: 'device:clinic-server', tool: 'read_file', arguments: { workspaceId, path } })` and never calls local FileService.
-- [ ] **Step 2: Add a failing test** that no `deviceId` and `deviceId: local` both stay local.
-- [ ] **Step 3: Verify RED**.
-- [ ] **Step 4: Route after parse/policy checks and before tool execution**, reusing the existing response-budget/cancellation path.
-- [ ] **Step 5: Verify GREEN**, including unknown/offline errors and local regression tests.
-- [ ] **Step 6: Commit** `feat(mcp): route tool calls to remote devices`.
+- [x] Add a test where remote `read_file` calls `device:clinic-server` and does not invoke local FileService.
+- [x] Add a test that no `deviceId` and `deviceId: local` remain local.
+- [x] Route remote execution through the existing response-budget/cancellation path.
+- [x] Preserve structured remote `PATH_OUTSIDE_WORKSPACE` errors.
+- [x] Fail remote destructive auto-approval closed when only local workspace scope is available.
+- [ ] Run focused and regression tests on an authoritative runner.
 
-### Task 5: Documentation and boundary acceptance
+### Task 5: Preserve remote session ownership
 
 **Files:**
-- Modify: `README.md`
-- Modify: `docs/architecture/MULTI_DEVICE_ROUTING.md`
-- Test: `packages/mcp-server/src/device-routing.test.ts`
+- Modify: `packages/extensions/src/types.ts`
+- Modify: `packages/extensions/src/extensions-service.ts`
+- Modify: `packages/extensions/src/mcp-session-manager.ts`
+- Create: `packages/extensions/src/mcp-session-manager-device-session.test.ts`
+- Create: `packages/mcp-server/src/device-routing-session.test.ts`
 
 **Interfaces:**
-- Documents `ExtensionsSettings.extraMcpServers` naming and an SSH bootstrap example.
+- `ExtensionsService.callMcpTool` accepts optional `sessionKey`.
+- `McpSessionManager.call(..., parentSessionKey?)` caches by `(server, parentSessionKey)` rather than server alone.
+- ToolRegistry passes its parent MCP `sessionId` to DeviceRouter/ExtensionsService.
 
-- [ ] **Step 1: Add/finish tests** that prove routing never forwards `deviceId` and preserves a remote `PATH_OUTSIDE_WORKSPACE` error.
-- [ ] **Step 2: Verify GREEN**.
-- [ ] **Step 3: Document configuration and upstream maintenance workflow**.
-- [ ] **Step 4: Run package tests/typecheck and the repository authoritative verification gate**.
-- [ ] **Step 5: Commit** `docs: document multi-device routing`.
+- [x] Add tests specifying same-session reuse and cross-session child connection isolation.
+- [x] Add parent-session propagation test from ToolRegistry to `ExtensionsService.callMcpTool`.
+- [x] Implement per-parent-session child MCP cache keys while preserving existing callers that omit the key.
+- [ ] Run extensions + MCP ownership/session regression tests.
 
-## Self-review
+### Task 6: Upstream integration and documentation
 
-- Spec coverage: discovery, routing, local compatibility, fail-closed unknown/offline behavior, destination-boundary preservation, and upstream maintenance are all mapped to tasks.
-- Placeholder scan: no TBD/TODO placeholders are used.
-- Type consistency: `deviceId` is the routing field throughout; remote server names are `device:<deviceId>`; DeviceRouter is the only remote-dispatch abstraction.
+**Files:**
+- Modify: `docs/architecture/MULTI_DEVICE_ROUTING.md`
+- Maintain: fork `main` and `feature/multi-device-routing` branch relationship.
+
+- [x] Fast-forward fork `main` from upstream without force.
+- [x] Exercise a real upstream update during development: upstream advanced from `166f004bf73e16d634ab37048346b4d4cd9df349` to `e075470cba825b127da991ead23d09b8a1bdd426`.
+- [x] Compare changed files and confirm no overlap with multi-device implementation files.
+- [x] Merge updated `main` into the feature branch through PR #2 without rewriting feature history.
+- [x] Document the maintenance workflow and native-upstream migration rule.
+- [ ] Run the repository authoritative verification gate.
+- [ ] Only after verification, mark PR #1 ready and merge it into `main`.
+
+## Verification gate
+
+Before PR #1 can leave draft state, run at minimum:
+
+```powershell
+corepack enable
+corepack prepare pnpm@10.15.0 --activate
+pnpm install --frozen-lockfile
+pnpm --filter @lnwjud/extensions test
+pnpm --filter @lnwjud/mcp-server test
+pnpm --filter @lnwjud/extensions typecheck
+pnpm --filter @lnwjud/mcp-server typecheck
+powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -File scripts/verify-release.ps1
+```
+
+No merge-to-main success claim is permitted until this gate is executed successfully.
