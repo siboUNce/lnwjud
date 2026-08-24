@@ -23,6 +23,7 @@ In phase 1, `deviceId` is a user-configured stable logical ID derived from a chi
 - Calls without `deviceId` execute locally exactly as before.
 - `deviceId: "local"` executes locally.
 - A non-local `deviceId` routes to child MCP server `device:<deviceId>`.
+- Only `device:*` entries sourced from lnwjud settings are trusted as device registry entries; Cursor/Claude-discovered MCP servers cannot claim a device identity merely by using the prefix.
 - `deviceId` is validated centrally and stripped before the destination tool receives its arguments.
 - The original tool permission gate still applies.
 - A cross-device route additionally requires `EXECUTE` permission because establishing/using a child MCP can launch an intermediary process such as `ssh` or `tunnel-client`.
@@ -79,6 +80,8 @@ Remote devices reuse `ExtensionsSettings.extraMcpServers`. Example:
 }
 ```
 
+The device entry must be stored in lnwjud settings to participate in device routing. The same `device:*` name found only in Cursor or Claude Desktop config remains an ordinary child MCP entry and is not trusted as a remote device identity.
+
 The device entry should use an intermediary transport such as `ssh` or a tunnel client. The existing `McpConfigLoader` deliberately refuses a child entry whose command directly points back to local `lnwjud`, preventing accidental local recursion. The remote command is transport/bootstrap only; the destination runtime owns its filesystem/process capability boundary. A path outside the destination's configured roots must still fail with `PATH_OUTSIDE_WORKSPACE`.
 
 For SSH transport, host-key and authentication setup must already be non-interactive; otherwise child MCP startup may wait for an SSH prompt and eventually time out.
@@ -93,6 +96,7 @@ For SSH transport, host-key and authentication setup must already be non-interac
 6. Parent-session identity is propagated into the child-session cache key to avoid cross-session handle ownership on the destination.
 7. Cross-device routing requires `EXECUTE` permission in addition to the original tool's permission level.
 8. Direct local lnwjud self-aggregation remains blocked; a device entry must use an intermediary transport to reach another runtime.
+9. Device identity can be claimed only by an lnwjud-settings entry, not by an identically named MCP entry discovered from Cursor or Claude Desktop.
 
 ## Upstream compatibility
 
@@ -112,4 +116,4 @@ If upstream later ships a native multi-device implementation, prefer the upstrea
 
 ## Verification status
 
-Behavioral contract tests were added for routing, permission escalation, remote error preservation, local compatibility, parent-session propagation, per-session child connection isolation and the device transport recursion guard. In the current execution environment the repository could not be cloned from GitHub and the fork's GitHub Actions run did not start, so no test/typecheck/release-gate result is claimed yet. The feature remains a draft PR until an authoritative runner verifies it.
+Behavioral contract tests were added for routing, permission escalation, trusted registry source, remote error preservation, local compatibility, parent-session propagation, per-session child connection isolation and the device transport recursion guard. In the current execution environment the repository could not be cloned from GitHub and the fork's GitHub Actions run did not start, so no test/typecheck/release-gate result is claimed yet. The feature remains a draft PR until an authoritative runner verifies it.
