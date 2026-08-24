@@ -187,6 +187,24 @@ export class ToolRegistry {
         await this.activity.end(callId, code, Date.now() - started, message);
         return response;
       }
+      if (remoteDevice) {
+        const routePermissionDecision = this.permissionEngine.decide(this.profileProvider(), {
+          action: 'mcp:device_route',
+          level: 'EXECUTE',
+          workspaceId: readWorkspaceId(parsed.value),
+          target: requestedDeviceId!,
+          destructive: false,
+        });
+        if (routePermissionDecision !== 'ALLOW') {
+          const code = routePermissionDecision === 'DENY' ? 'PERMISSION_DENIED' : 'PERMISSION_REQUIRED';
+          const message = routePermissionDecision === 'DENY'
+            ? `Remote device route ${requestedDeviceId} is denied by the active permission profile`
+            : `Remote device route ${requestedDeviceId} requires EXECUTE permission approval`;
+          const response = mapError(appError(code, message, routePermissionDecision === 'ASK'));
+          await this.activity.end(callId, code, Date.now() - started, message);
+          return response;
+        }
+      }
       const executionInput = policyAllowsScopedDestructive ? withInternalUserConfirmation(parsed.value) : parsed.value;
       const executionTool = this.executionTool(tool, requestedDeviceId);
       const execution = await this.executeWithinResponseBudget(executionTool, executionInput, parentSignal);
