@@ -6,6 +6,7 @@ import { DEFAULT_DESTRUCTIVE_AUTO_APPROVAL_POLICY, type DestructiveAutoApprovalP
 import { ActivityTracker, type ActivitySink, type TraceContext } from './activity-tracker.js';
 import { ContextEngine } from './context-engine.js';
 import { ContextEconomyRuntime } from './context-economy.js';
+import { DeviceRouter } from './device-routing.js';
 import { hasExplicitUserConfirmation, inspectDestructiveOperation } from './destructive-policy.js';
 import { isScopedAutoApprovalAllowed, type WorkspaceScope } from './destructive-scope.js';
 import { FilePageEngine } from './file-page-engine.js';
@@ -72,6 +73,7 @@ export class ToolRegistry {
   private readonly activityWorkspaceResolver: (cwd: string) => Promise<string | undefined>;
   private readonly shellTaskWorkspaces = new Map<string, string>();
   private readonly maxToolDurationMs: number | null;
+  private readonly deviceRouter: DeviceRouter;
 
   public constructor(services: McpApplicationServices, actor: FileActor, options: ToolRegistryOptions = {}) {
     this.diagnostic = options.diagnostic;
@@ -82,6 +84,7 @@ export class ToolRegistry {
     this.workspaceScopeResolver = normalizeWorkspaceScopeResolver(services, actor, options);
     this.activityWorkspaceResolver = normalizeActivityWorkspaceResolver(services, actor);
     this.maxToolDurationMs = normalizeToolResponseBudget(options.maxToolDurationMs);
+    this.deviceRouter = new DeviceRouter({ extensions: services.extensions });
     const contextEconomy = new ContextEconomyRuntime();
     const context: McpToolContext = { services, actor, contextEconomy };
     const contextEngine = new ContextEngine(services, actor, contextEconomy);
@@ -134,6 +137,7 @@ export class ToolRegistry {
   }
 
   public async invoke(name: string, input: unknown, traceContext?: TraceContext, parentSignal?: AbortSignal): Promise<McpToolResponse> {
+    const requestedDeviceId = readRequestedDeviceId(input);
     const activityWorkspaceId = await this.resolveActivityWorkspaceId(name, input);
     const activityInput = withActivityWorkspaceId(input, activityWorkspaceId);
     const callId = await this.activity.begin(name, activityInput, { ...(traceContext ?? {}), ...(this.sessionId === undefined ? {} : { sessionId: this.sessionId }) });
@@ -183,7 +187,8 @@ export class ToolRegistry {
         return response;
       }
       const executionInput = policyAllowsScopedDestructive ? withInternalUserConfirmation(parsed.value) : parsed.value;
-      const execution = await this.executeWithinResponseBudget(tool, executionInput, parentSignal);
+      const executionTool = this.executionTool(tool, requestedDeviceId);
+      const execution = await this.executeWithinResponseBudget(executionTool, executionInput, parentSignal);
       const response = execution.response;
       this.rememberShellTaskWorkspace(name, response, activityWorkspaceId);
       const resultCode = response.isError === true
@@ -206,6 +211,17 @@ export class ToolRegistry {
       await this.activity.end(callId, 'INTERNAL_ERROR', Date.now() - started, 'Operation failed');
       return response;
     }
+  }
+
+  private executionTool(tool: McpToolDefinition, requestedDeviceId: string | undefined): McpToolDefinition {
+    if (requestedDeviceId === undefined || this.deviceRouter.isLocal(requestedDeviceId)) return tool;
+    return {
+      ...tool,
+      execute: async (input, signal) => {
+        if (!isRecord(input)) return { ok: false, error: appError('INVALID_INPUT', 'Remote tool input must be an object') };
+        return this.deviceRouter.call(requestedDeviceId, tool.name, input, signal);
+      },
+    };
   }
 
   private async resolveActivityWorkspaceId(name: string, input: unknown): Promise<string | undefined> {
@@ -397,6 +413,11 @@ function normalizeWorkspaceScopeResolver(
     const rootPath = realRootPath ?? (typeof info.rootPath === 'string' && info.rootPath.trim().length > 0 ? info.rootPath : undefined);
     return rootPath === undefined ? null : { workspaceId, rootPath };
   };
+}
+
+function readRequestedDeviceId(input: unknown): string | undefined {
+  if (!isRecord(input)) return undefined;
+  return readTrimmedString(input.deviceId);
 }
 
 function readExplicitWorkspaceId(input: unknown): string | undefined {
