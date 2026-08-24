@@ -78,8 +78,6 @@ export interface McpToolContext {
   readonly actor: FileActor;
   readonly services: McpApplicationServices;
   readonly contextEconomy: ContextEconomyRuntime;
-  /** Stable parent MCP session identity when the transport exposes one. */
-  readonly sessionId?: string;
 }
 
 export interface ToolConfig<T extends z.ZodType> {
