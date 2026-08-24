@@ -46,11 +46,15 @@ describe('remote device session propagation', () => {
     }, expect.any(AbortSignal));
   });
 
-  it('uses the parent MCP session key when device child tools are called through mcp_call', async () => {
+  it('uses the request-scoped actor session when device child tools are called through mcp_call', async () => {
     const callMcpTool = vi.fn(async () => ok({ structuredContent: { content: 'remote' } }));
     const services: McpApplicationServices = { extensions: fakeExtensions(callMcpTool) };
 
-    await new ToolRegistry(services, { clientId: 'client-1', clientName: 'test' }, { sessionId: 'session-b' }).invoke('mcp_call', {
+    await new ToolRegistry(
+      services,
+      { clientId: 'client-1', clientName: 'test', sessionId: 'session-b' },
+      { sessionId: 'session-b' },
+    ).invoke('mcp_call', {
       server: 'device:clinic-server',
       tool: 'workspace_tree',
       arguments: { path: 'D:\\Codex' },
